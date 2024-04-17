@@ -1,9 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using Microsoft.ML.OnnxRuntime;
 using OpenUtau.Core.Util;
-using Vortice.DXGI;
+// using Vortice.DXGI;
 
 namespace OpenUtau.Core {
     public class GpuInfo {
@@ -20,12 +21,18 @@ namespace OpenUtau.Core {
             if (OS.IsWindows()) {
                 return new List<string> {
                 "cpu",
-                "directml"
+                // "directml",
+                "cuda"
                 };
             } else if (OS.IsMacOS()) {
                 return new List<string> {
                 "cpu",
                 "coreml"
+                };
+            } else if (OS.IsLinux()) {
+                return new List<string> {
+                "cpu",
+                "cuda"
                 };
             }
             return new List<string> {
@@ -35,17 +42,48 @@ namespace OpenUtau.Core {
 
         public static List<GpuInfo> getGpuInfo() {
             List<GpuInfo> gpuList = new List<GpuInfo>();
-            if (OS.IsWindows()) {
-                DXGI.CreateDXGIFactory1(out IDXGIFactory1 factory);
-                for(int deviceId = 0; deviceId < 32; deviceId++) {
-                    factory.EnumAdapters1(deviceId, out IDXGIAdapter1 adapterOut);
-                    if(adapterOut is null) {
-                        break;
+            // if (OS.IsWindows()) {
+            //     DXGI.CreateDXGIFactory1(out IDXGIFactory1 factory);
+            //     for(int deviceId = 0; deviceId < 32; deviceId++) {
+            //         factory.EnumAdapters1(deviceId, out IDXGIAdapter1 adapterOut);
+            //         if(adapterOut is null) {
+            //             break;
+            //         }
+            //         gpuList.Add(new GpuInfo {
+            //             deviceId = deviceId,
+            //             description = adapterOut.Description.Description
+            //         }) ;
+            //     }
+            // }
+            if (OS.IsWindows() || OS.IsLinux()) {
+                var psi = new ProcessStartInfo {
+                    FileName = "nvidia-smi",
+                    Arguments = "--query-gpu=index,name --format=csv,noheader",
+                    RedirectStandardOutput = true,
+                    UseShellExecute = false
+                };
+
+                var process = Process.Start(psi);
+                if (process != null) {
+                    string output = process.StandardOutput.ReadToEnd();
+                    string[] lines = output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+
+                    foreach (string line in lines) {
+                        string[] parts = line.Split(',', 2);
+                        if (parts.Length < 2) {
+                            continue;
+                        }
+
+                        if (!int.TryParse(parts[0].Trim(), out int deviceId)) {
+                            continue;
+                        }
+
+                        string deviceName = parts[1].Trim();
+                        gpuList.Add(new GpuInfo {
+                            deviceId = deviceId,
+                            description = deviceName
+                        });
                     }
-                    gpuList.Add(new GpuInfo {
-                        deviceId = deviceId,
-                        description = adapterOut.Description.Description
-                    }) ;
                 }
             }
             if (gpuList.Count == 0) {
@@ -73,6 +111,15 @@ namespace OpenUtau.Core {
                 case "coreml":
                     options.AppendExecutionProvider_CoreML(CoreMLFlags.COREML_FLAG_ENABLE_ON_SUBGRAPH);
                     break;
+                case "cuda": {
+                    var cudaOptions = new OrtCUDAProviderOptions();
+                    cudaOptions.UpdateOptions(new Dictionary<string, string> {
+                        ["device_id"] = Preferences.Default.OnnxGpu.ToString(),
+                        ["cudnn_conv_algo_search"] = "DEFAULT"
+                    });
+                    options.AppendExecutionProvider_CUDA(cudaOptions);
+                    break;
+                }
             }
             return options;
         }
