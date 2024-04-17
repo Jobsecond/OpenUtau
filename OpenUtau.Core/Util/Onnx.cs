@@ -4,7 +4,9 @@ using System.Diagnostics;
 using System.Linq;
 using Microsoft.ML.OnnxRuntime;
 using OpenUtau.Core.Util;
-// using Vortice.DXGI;
+#if !CUDA
+using Vortice.DXGI;
+#endif
 
 namespace OpenUtau.Core {
     public class GpuInfo {
@@ -19,21 +21,33 @@ namespace OpenUtau.Core {
     public class Onnx {
         public static List<string> getRunnerOptions() {
             if (OS.IsWindows()) {
+#if CUDA
                 return new List<string> {
-                "cpu",
-                // "directml",
-                "cuda"
+                    "cpu",
+                    "cuda"
                 };
+#else
+                return new List<string> {
+                    "cpu",
+                    "directml"
+                };
+#endif
             } else if (OS.IsMacOS()) {
                 return new List<string> {
-                "cpu",
-                "coreml"
+                    "cpu",
+                    "coreml"
                 };
             } else if (OS.IsLinux()) {
+#if CUDA
                 return new List<string> {
-                "cpu",
-                "cuda"
+                    "cpu",
+                    "cuda"
                 };
+#else
+                return new List<string> {
+                    "cpu"
+                };
+#endif
             }
             return new List<string> {
                 "cpu"
@@ -42,19 +56,7 @@ namespace OpenUtau.Core {
 
         public static List<GpuInfo> getGpuInfo() {
             List<GpuInfo> gpuList = new List<GpuInfo>();
-            // if (OS.IsWindows()) {
-            //     DXGI.CreateDXGIFactory1(out IDXGIFactory1 factory);
-            //     for(int deviceId = 0; deviceId < 32; deviceId++) {
-            //         factory.EnumAdapters1(deviceId, out IDXGIAdapter1 adapterOut);
-            //         if(adapterOut is null) {
-            //             break;
-            //         }
-            //         gpuList.Add(new GpuInfo {
-            //             deviceId = deviceId,
-            //             description = adapterOut.Description.Description
-            //         }) ;
-            //     }
-            // }
+#if CUDA
             if (OS.IsWindows() || OS.IsLinux()) {
                 var psi = new ProcessStartInfo {
                     FileName = "nvidia-smi",
@@ -86,6 +88,21 @@ namespace OpenUtau.Core {
                     }
                 }
             }
+#else
+            if (OS.IsWindows()) {
+                DXGI.CreateDXGIFactory1(out IDXGIFactory1 factory);
+                for (int deviceId = 0; deviceId < 32; deviceId++) {
+                    factory.EnumAdapters1(deviceId, out IDXGIAdapter1 adapterOut);
+                    if (adapterOut is null) {
+                        break;
+                    }
+                    gpuList.Add(new GpuInfo {
+                        deviceId = deviceId,
+                        description = adapterOut.Description.Description
+                    });
+                }
+            }
+#endif
             if (gpuList.Count == 0) {
                 gpuList.Add(new GpuInfo {
                     deviceId = 0,

@@ -26,7 +26,6 @@
     <PackageReference Include="System.ComponentModel.Annotations" Version="5.0.0" />
     <PackageReference Include="System.IO.Packaging" Version="7.0.0" />
     <PackageReference Include="UTF.Unknown" Version="2.5.1" />
-    <!--<PackageReference Include="Vortice.DXGI" Version="2.4.2" />-->
     <PackageReference Include="WanaKana-net" Version="1.0.0" />
     <PackageReference Include="YamlDotNet" Version="15.1.2" />
     <PackageReference Include="NetMQ" Version="4.0.1.12" />
@@ -34,14 +33,44 @@
   <ItemGroup Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Windows)))' == 'true'">
     <PackageReference Include="NAudio" Version="2.1.0" />
   </ItemGroup>
-  <ItemGroup Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Windows)))' == 'true' Or 
-                        '$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Linux)))' == 'true'">
-    <PackageReference Include="Microsoft.ML.OnnxRuntime.Gpu" Version="1.17.1" />
-  </ItemGroup>
-  <ItemGroup Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Windows)))' == 'false' And 
-                        '$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Linux)))' == 'false'">
-    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.17.1" />
-  </ItemGroup>
+  <Choose>
+    <When Condition="$([System.Text.RegularExpressions.Regex]::IsMatch($(DefineConstants), '^(.*;)*CUDA(;.*)*$'))">
+      <!-- Using CUDA -->
+      <Choose>
+        <When Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Windows)))' == 'true' Or 
+                         '$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Linux)))' == 'true'">
+          <!-- For Windows or Linux: Use GPU version of ONNX Runtime, which supports CUDA -->
+          <ItemGroup>
+            <PackageReference Include="Microsoft.ML.OnnxRuntime.Gpu" Version="1.17.1" />
+          </ItemGroup>
+        </When>
+        <Otherwise>
+          <!-- Other platforms: Use CPU version of ONNX Runtime -->
+          <ItemGroup>
+            <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.17.1" />
+          </ItemGroup>
+        </Otherwise>
+      </Choose>
+    </When>
+    <Otherwise>
+      <!-- Not using CUDA -->
+      <Choose>
+        <When Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Windows)))' == 'true'">
+          <!-- For Windows: Use DirectML version of ONNX Runtime, and include DXGI for GPU query -->
+          <ItemGroup>
+            <PackageReference Include="Microsoft.ML.OnnxRuntime.DirectML" Version="1.17.1" />
+            <PackageReference Include="Vortice.DXGI" Version="2.4.2" />
+          </ItemGroup>
+        </When>
+        <Otherwise>
+          <!-- Other platforms: Use CPU version of ONNX Runtime -->
+          <ItemGroup>
+            <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.17.1" />
+          </ItemGroup>
+        </Otherwise>
+      </Choose>
+    </Otherwise>
+  </Choose>
   <ItemGroup>
     <Compile Update="Analysis\Crepe\Resources.Designer.cs">
       <DesignTime>True</DesignTime>
@@ -75,5 +104,8 @@
   </ItemGroup>
   <PropertyGroup Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Windows)))' == 'true'">
     <DefineConstants>WINDOWS</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup>
+    <DefineConstants>CUDA</DefineConstants>
   </PropertyGroup>
 </Project>
