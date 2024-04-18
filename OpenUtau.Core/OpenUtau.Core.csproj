@@ -105,7 +105,7 @@
   <PropertyGroup Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Windows)))' == 'true'">
     <DefineConstants>WINDOWS</DefineConstants>
   </PropertyGroup>
-  <PropertyGroup>
+  <PropertyGroup Condition="'$(OPENUTAU_USE_CUDA.Trim())' == '1'">
     <DefineConstants>CUDA</DefineConstants>
   </PropertyGroup>
 </Project>
