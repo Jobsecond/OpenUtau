@@ -34,7 +34,7 @@
     <PackageReference Include="NAudio" Version="2.1.0" />
   </ItemGroup>
   <Choose>
-    <When Condition="$([System.Text.RegularExpressions.Regex]::IsMatch($(DefineConstants), '^(.*;)*CUDA(;.*)*$'))">
+    <When Condition="'$(OPENUTAU_USE_CUDA.Trim())' == '1'">
       <!-- Using CUDA -->
       <Choose>
         <When Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Windows)))' == 'true' Or 
