@@ -4,7 +4,7 @@ using System.Diagnostics;
 using System.Linq;
 using Microsoft.ML.OnnxRuntime;
 using OpenUtau.Core.Util;
-#if !CUDA
+#if WINDOWS && !CUDA
 using Vortice.DXGI;
 #endif
 
@@ -88,7 +88,7 @@ namespace OpenUtau.Core {
                     }
                 }
             }
-#else
+#elif WINDOWS
             if (OS.IsWindows()) {
                 DXGI.CreateDXGIFactory1(out IDXGIFactory1 factory);
                 for (int deviceId = 0; deviceId < 32; deviceId++) {
