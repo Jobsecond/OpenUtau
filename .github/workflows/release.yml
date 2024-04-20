@@ -1,0 +1,205 @@
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version Number'
+        default: '0.0.0.0'
+        required: true
+        type: string
+      create-release:
+        type: boolean
+        description: "Create Release"
+      pre-release:
+        type: boolean
+        description: "Mark the release as pre-release"
+
+env:
+  CUDA_SUFFIX: cuda
+  
+jobs:
+  release:
+    runs-on: ${{ matrix.os.runs-on }}
+
+    strategy:
+      matrix:
+        os: 
+          - runs-on: windows-latest
+            arch: win-x64
+          - runs-on: macos-latest
+            arch: osx-x64
+          - runs-on: ubuntu-latest
+            arch: linux-x64
+          - runs-on: windows-latest
+            arch: win-arm64
+          - runs-on: macos-latest
+            arch: osx-arm64
+          - runs-on: ubuntu-latest
+            arch: linux-arm64
+
+    steps:
+    - uses: actions/checkout@v1
+    
+    - name: Patch Versions
+      uses: justalemon/VersionPatcher@v0.7.1
+      with:
+        version: ${{ inputs.version }}
+        csproj-files: "OpenUtau/*.csproj"
+
+    - name: download directml dll from nuget
+      if: ${{ matrix.os.runs-on == 'windows-latest' }}
+      uses: carlosperate/download-file-action@v1.0.3
+      with:
+        file-url: https://www.nuget.org/api/v2/package/Microsoft.AI.DirectML/1.12.0
+        file-name: Microsoft.AI.DirectML.nupkg
+        location: .
+
+    - name: extract directml
+      if: ${{ matrix.os.runs-on == 'windows-latest' }}
+      shell: bash
+      run: |
+        mkdir Microsoft.AI.DirectML
+        unzip Microsoft.AI.DirectML.nupkg -d Microsoft.AI.DirectML
+
+    - name: restore
+      shell: bash
+      run: dotnet restore OpenUtau -r ${{ matrix.os.arch }}
+      env:
+        OPENUTAU_USE_CUDA: 0
+
+    - name: build
+      shell: bash
+      run: dotnet publish OpenUtau -c Release -r ${{ matrix.os.arch }} --self-contained true -o bin/${{ matrix.os.arch }}
+      env:
+        OPENUTAU_USE_CUDA: 0
+
+    - name: restore (cuda)
+      if: ${{ matrix.os.arch == 'win-x64' || matrix.os.arch == 'linux-x64' }}
+      shell: bash
+      run: dotnet restore OpenUtau -r ${{ matrix.os.arch }}
+      env:
+        OPENUTAU_USE_CUDA: 1
+
+    - name: build (cuda)
+      if: ${{ matrix.os.arch == 'win-x64' || matrix.os.arch == 'linux-x64' }}
+      shell: bash
+      run: dotnet publish OpenUtau -c Release -r ${{ matrix.os.arch }} --self-contained true -o bin/${{ matrix.os.arch }}-${CUDA_SUFFIX}
+      env:
+        OPENUTAU_USE_CUDA: 1
+
+    - name: add openutau.plugins.builtin
+      shell: pwsh
+      run: |
+        copy OpenUtau.Plugin.Builtin\bin\Release\netstandard2.1\OpenUtau.Plugin.Builtin.dll -Destination bin\${{ matrix.os.arch }}
+        if (Test-Path bin\${{ matrix.os.arch }}-$env:CUDA_SUFFIX -PathType Container) {
+          copy OpenUtau.Plugin.Builtin\bin\Release\netstandard2.1\OpenUtau.Plugin.Builtin.dll -Destination bin\${{ matrix.os.arch }}-$env:CUDA_SUFFIX
+        }
+    
+    - name: compress
+      shell: bash
+      run: |
+        7z a OpenUtau-${{ matrix.os.arch }}-${{ inputs.version }}.zip ./bin/${{ matrix.os.arch }}/*
+        if [ -d "./bin/${{ matrix.os.arch }}-${CUDA_SUFFIX}" ]; then
+          7z a OpenUtau-${{ matrix.os.arch }}-${CUDA_SUFFIX}-${{ inputs.version }}.zip ./bin/${{ matrix.os.arch }}-${CUDA_SUFFIX}/*
+        fi
+
+    - name: download vocoder
+      uses: carlosperate/download-file-action@v1.0.3
+      with:
+        file-url: https://github.com/xunmengshe/OpenUtau/releases/download/0.0.0.0/nsf_hifigan-2024.02.oudep
+        file-name: nsf_hifigan.oudep
+        location: ./
+        
+    - name: extract vocoder
+      shell: bash
+      run: |
+        7z x -o"./bin/${{ matrix.os.arch }}/Dependencies/nsf_hifigan" ./nsf_hifigan.oudep
+        if [ -d "./bin/${{ matrix.os.arch }}-${CUDA_SUFFIX}" ]; then
+          7z x -o"./bin/${{ matrix.os.arch }}-${CUDA_SUFFIX}/Dependencies/nsf_hifigan" ./nsf_hifigan.oudep
+        fi
+        
+    - name: download rhythmizer
+      uses: carlosperate/download-file-action@v1.0.3
+      with:
+        file-url: https://github.com/xunmengshe/OpenUtau/releases/download/0.0.0.0/rhythmizer_zh_opencpop_strict.oudep
+        file-name: rhythmizer_zh_opencpop_strict.oudep
+        location: ./
+    
+    - name: extract rhythmizer
+      shell: bash
+      run: |
+        7z x -o"./bin/${{ matrix.os.arch }}/Dependencies/rhythmizer_zh_opencpop_strict" ./rhythmizer_zh_opencpop_strict.oudep
+        if [ -d "./bin/${{ matrix.os.arch }}-${CUDA_SUFFIX}" ]; then
+          7z x -o"./bin/${{ matrix.os.arch }}-${CUDA_SUFFIX}/Dependencies/rhythmizer_zh_opencpop_strict" ./rhythmizer_zh_opencpop_strict.oudep
+        fi
+     
+    - name: compress DiffsingerPack
+      if: ${{ matrix.os.runs-on == 'windows-latest' }}
+      shell: bash
+      run: |
+        7z a OpenUtau-${{ matrix.os.arch }}-${{ inputs.version }}-DiffsingerPack.zip ./bin/${{ matrix.os.arch }}/*
+        if [ -d "./bin/${{ matrix.os.arch }}-${CUDA_SUFFIX}" ]; then
+          7z a OpenUtau-${{ matrix.os.arch }}-${CUDA_SUFFIX}-${{ inputs.version }}-DiffsingerPack.zip ./bin/${{ matrix.os.arch }}-${CUDA_SUFFIX}/*
+        fi
+     
+    - name: Upload artifact
+      uses: actions/upload-artifact@v1.0.0
+      with:
+        name: OpenUtau-${{ matrix.os.arch }}-${{ inputs.version }}.zip
+        path: OpenUtau-${{ matrix.os.arch }}-${{ inputs.version }}.zip
+
+    - name: Upload artifact (cuda)
+      if: ${{ matrix.os.arch == 'win-x64' || matrix.os.arch == 'linux-x64' }}
+      uses: actions/upload-artifact@v1.0.0
+      with:
+        name: OpenUtau-${{ matrix.os.arch }}-${{ env.CUDA_SUFFIX }}-${{ inputs.version }}.zip
+        path: OpenUtau-${{ matrix.os.arch }}-${{ env.CUDA_SUFFIX }}-${{ inputs.version }}.zip
+
+    - name: Upload artifact DiffsingerPack
+      if: ${{ matrix.os.runs-on == 'windows-latest' }}
+      uses: actions/upload-artifact@v1.0.0
+      with:
+        name: OpenUtau-${{ matrix.os.arch }}-${{ inputs.version }}-DiffsingerPack.zip
+        path: OpenUtau-${{ matrix.os.arch }}-${{ inputs.version }}-DiffsingerPack.zip
+
+    - name: Upload artifact DiffsingerPack (cuda)
+      if: ${{ matrix.os.arch == 'win-x64' }}
+      uses: actions/upload-artifact@v1.0.0
+      with:
+        name: OpenUtau-${{ matrix.os.arch }}-${{ env.CUDA_SUFFIX }}-${{ inputs.version }}-DiffsingerPack.zip
+        path: OpenUtau-${{ matrix.os.arch }}-${{ env.CUDA_SUFFIX }}-${{ inputs.version }}-DiffsingerPack.zip
+    
+    - name: Create release and upload artifact
+      if: ${{ inputs.create-release }}
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ inputs.version }}
+        prerelease: ${{ inputs.pre-release }}
+        files: |
+          OpenUtau-${{ matrix.os.arch }}-${{ inputs.version }}.zip
+
+    - name: Create release and upload artifact (cuda)
+      if: ${{ inputs.create-release && (matrix.os.arch == 'win-x64' || matrix.os.arch == 'linux-x64') }}
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ inputs.version }}
+        prerelease: ${{ inputs.pre-release }}
+        files: |
+          OpenUtau-${{ matrix.os.arch }}-${{ env.CUDA_SUFFIX }}-${{ inputs.version }}.zip
+
+    - name: Create release and upload artifact DiffsingerPack
+      if: ${{ inputs.create-release && matrix.os.runs-on == 'windows-latest' }}
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ inputs.version }}
+        prerelease: ${{ inputs.pre-release }}
+        files: |
+          OpenUtau-${{ matrix.os.arch }}-${{ inputs.version }}-DiffsingerPack.zip
+
+    - name: Create release and upload artifact DiffsingerPack (cuda)
+      if: ${{ inputs.create-release && matrix.os.arch == 'win-x64' }}
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ inputs.version }}
+        prerelease: ${{ inputs.pre-release }}
+        files: |
+          OpenUtau-${{ matrix.os.arch }}-${{ env.CUDA_SUFFIX }}-${{ inputs.version }}-DiffsingerPack.zip
